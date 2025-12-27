@@ -1,0 +1,252 @@
+"""Ansible inventory parser for network devices."""
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from app.config import VENDOR_DEVICE_TYPES, settings
+
+
+@dataclass
+class Switch:
+    """Represents a network switch."""
+
+    name: str
+    host: str
+    vendor: str
+    device_type: str
+    username: str = ""
+    password: str = ""
+    port: int = 22
+    role: str = ""  # LR1 or LR2
+
+    @property
+    def display_name(self) -> str:
+        """Get display name for UI."""
+        return f"{self.name} ({self.host})"
+
+
+@dataclass
+class Site:
+    """Represents a network site with switch pair."""
+
+    name: str
+    site_id: str
+    switches: dict[str, Switch] = field(default_factory=dict)  # LR1, LR2
+
+    @property
+    def display_name(self) -> str:
+        """Get display name for UI."""
+        return f"{self.name} (Site {self.site_id})"
+
+    def get_switch(self, role: str) -> Switch | None:
+        """Get switch by role (LR1 or LR2)."""
+        return self.switches.get(role.upper())
+
+
+class InventoryParser:
+    """Parse Ansible YAML inventory files."""
+
+    def __init__(self, inventory_path: Path | None = None):
+        self.inventory_path = inventory_path or settings.inventory_path
+        self._sites: dict[str, Site] = {}
+        self._loaded = False
+
+    def load(self) -> None:
+        """Load and parse the inventory file."""
+        if not self.inventory_path.exists():
+            raise FileNotFoundError(f"Inventory file not found: {self.inventory_path}")
+
+        with open(self.inventory_path) as f:
+            data = yaml.safe_load(f)
+
+        self._parse_inventory(data)
+        self._loaded = True
+
+    def _parse_inventory(self, data: dict[str, Any]) -> None:
+        """Parse inventory data structure."""
+        if not data:
+            return
+
+        # Handle different Ansible inventory formats
+        # Format 1: all.children.sites.children.<site_name>.hosts
+        # Format 2: all.children.<site_name>.hosts
+        # Format 3: Direct hosts under group names
+
+        all_group = data.get("all", data)
+        children = all_group.get("children", {})
+
+        # Check for sites group
+        sites_group = children.get("sites", children.get("network", children))
+        if "children" in sites_group:
+            sites_children = sites_group["children"]
+        else:
+            sites_children = children
+
+        # Parse each site
+        for site_name, site_data in sites_children.items():
+            if not isinstance(site_data, dict):
+                continue
+
+            # Skip non-site groups
+            if site_name in ("all", "ungrouped", "vars"):
+                continue
+
+            site = self._parse_site(site_name, site_data)
+            if site and site.switches:
+                self._sites[site.site_id] = site
+
+    def _parse_site(self, site_name: str, site_data: dict[str, Any]) -> Site | None:
+        """Parse a single site from inventory."""
+        hosts = site_data.get("hosts", {})
+        site_vars = site_data.get("vars", {})
+
+        if not hosts:
+            return None
+
+        # Extract site_id from vars or from site name
+        site_id = site_vars.get("site_id", "")
+        if not site_id:
+            # Try to extract from site name (e.g., "site_001" -> "001")
+            parts = site_name.split("_")
+            if len(parts) > 1 and parts[-1].isdigit():
+                site_id = parts[-1]
+            else:
+                site_id = site_name
+
+        site = Site(name=site_name, site_id=site_id)
+
+        # Parse hosts in this site
+        for host_name, host_vars in hosts.items():
+            if not isinstance(host_vars, dict):
+                host_vars = {}
+
+            # Merge site vars with host vars (host vars take precedence)
+            merged_vars = {**site_vars, **host_vars}
+
+            switch = self._parse_host(host_name, merged_vars)
+            if switch:
+                site.switches[switch.role] = switch
+
+        return site
+
+    def _parse_host(self, host_name: str, host_vars: dict[str, Any]) -> Switch | None:
+        """Parse a single host entry."""
+        # Get connection details
+        host = host_vars.get("ansible_host", host_name)
+        vendor = host_vars.get("vendor", host_vars.get("ansible_network_os", ""))
+
+        if not vendor:
+            # Try to detect vendor from hostname
+            vendor = self._detect_vendor(host_name)
+
+        # Map vendor to Netmiko device type
+        device_type = VENDOR_DEVICE_TYPES.get(vendor.lower(), "")
+        if not device_type:
+            return None
+
+        # Determine role (LR1 or LR2) from hostname or IP
+        role = host_vars.get("role", "")
+        if not role:
+            role = self._detect_role(host_name, host)
+
+        # Get credentials
+        username = host_vars.get(
+            "ansible_user",
+            host_vars.get("username", settings.default_username),
+        )
+        password = host_vars.get(
+            "ansible_password",
+            host_vars.get("password", settings.default_password),
+        )
+        port = host_vars.get("ansible_port", host_vars.get("port", 22))
+
+        return Switch(
+            name=host_name,
+            host=host,
+            vendor=vendor,
+            device_type=device_type,
+            username=username,
+            password=password,
+            port=int(port),
+            role=role,
+        )
+
+    def _detect_vendor(self, hostname: str) -> str:
+        """Try to detect vendor from hostname."""
+        hostname_lower = hostname.lower()
+        if "arista" in hostname_lower or "eos" in hostname_lower:
+            return "arista"
+        if "dell" in hostname_lower or "os10" in hostname_lower:
+            return "dell"
+        if "juniper" in hostname_lower or "junos" in hostname_lower or "qfx" in hostname_lower:
+            return "juniper"
+        return ""
+
+    def _detect_role(self, hostname: str, ip: str) -> str:
+        """Detect switch role (LR1/LR2) from hostname or IP."""
+        hostname_lower = hostname.lower()
+
+        # Check hostname patterns
+        if "lr1" in hostname_lower or "-1" in hostname_lower or "_1" in hostname_lower:
+            return "LR1"
+        if "lr2" in hostname_lower or "-2" in hostname_lower or "_2" in hostname_lower:
+            return "LR2"
+
+        # Check IP address ending
+        if ip:
+            last_octet = ip.split(".")[-1] if "." in ip else ""
+            if last_octet == "245":
+                return "LR1"
+            if last_octet == "246":
+                return "LR2"
+
+        return "LR1"  # Default to LR1 if unknown
+
+    def get_sites(self) -> list[Site]:
+        """Get all parsed sites."""
+        if not self._loaded:
+            self.load()
+        return list(self._sites.values())
+
+    def get_site(self, site_id: str) -> Site | None:
+        """Get site by ID."""
+        if not self._loaded:
+            self.load()
+        return self._sites.get(site_id)
+
+    def get_switch(self, site_id: str, role: str) -> Switch | None:
+        """Get switch by site ID and role."""
+        site = self.get_site(site_id)
+        if site:
+            return site.get_switch(role)
+        return None
+
+    def reload(self) -> None:
+        """Reload inventory from file."""
+        self._sites.clear()
+        self._loaded = False
+        self.load()
+
+
+# Global inventory instance
+_inventory: InventoryParser | None = None
+
+
+def get_inventory() -> InventoryParser:
+    """Get the global inventory parser instance."""
+    global _inventory
+    if _inventory is None:
+        _inventory = InventoryParser()
+    return _inventory
+
+
+def reload_inventory() -> InventoryParser:
+    """Reload and return the inventory."""
+    global _inventory
+    if _inventory is None:
+        _inventory = InventoryParser()
+    _inventory.reload()
+    return _inventory
