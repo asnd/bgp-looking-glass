@@ -2,8 +2,6 @@
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from app.inventory import Switch
 from app.network import CommandResult, NetworkManager, get_network_manager
 

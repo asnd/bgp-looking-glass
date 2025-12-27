@@ -31,7 +31,7 @@ class CommandResult:
 class NetworkManager:
     """Manage network device connections and command execution."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.connection_timeout = settings.connection_timeout
         self.command_timeout = settings.command_timeout
 

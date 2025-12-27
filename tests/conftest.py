@@ -1,8 +1,8 @@
 """Pytest fixtures for testing."""
 
+from collections.abc import Generator
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Generator
 
 import pytest
 import yaml

@@ -1,7 +1,6 @@
 """Application configuration."""
 
 from pathlib import Path
-from typing import Any
 
 from pydantic_settings import BaseSettings
 

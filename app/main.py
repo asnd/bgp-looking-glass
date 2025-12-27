@@ -1,6 +1,7 @@
 """FastAPI application for BGP Looking Glass."""
 
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -24,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan handler."""
     # Startup
     logger.info("Starting BGP Looking Glass application")
@@ -92,7 +93,7 @@ class CommandResponse(BaseModel):
 
 # Routes
 @app.get("/", response_class=HTMLResponse)
-async def index(request: Request):
+async def index(request: Request) -> HTMLResponse:
     """Render the main looking glass page."""
     inventory = get_inventory()
     sites = inventory.get_sites()
@@ -213,7 +214,7 @@ async def api_reload_inventory() -> dict[str, Any]:
             "site_count": len(sites),
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @app.get("/api/health")
@@ -224,7 +225,7 @@ async def health_check() -> dict[str, str]:
 
 # HTMX partial endpoints
 @app.get("/partials/switches/{site_id}", response_class=HTMLResponse)
-async def get_switches_partial(request: Request, site_id: str):
+async def get_switches_partial(request: Request, site_id: str) -> HTMLResponse:
     """Get switches dropdown options for a site (HTMX partial)."""
     inventory = get_inventory()
     site = inventory.get_site(site_id)
@@ -242,7 +243,7 @@ async def get_switches_partial(request: Request, site_id: str):
 
 
 @app.post("/partials/execute", response_class=HTMLResponse)
-async def execute_partial(request: Request):
+async def execute_partial(request: Request) -> HTMLResponse:
     """Execute command and return HTML result (HTMX partial)."""
     form_data = await request.form()
     site_id = form_data.get("site_id", "")
