@@ -103,6 +103,7 @@ def test_client(temp_inventory_file: Path, monkeypatch) -> TestClient:
     """Create a test client with mocked inventory."""
     # Patch the settings to use temp inventory
     from app import config
+
     monkeypatch.setattr(config.settings, "inventory_path", temp_inventory_file)
 
     # Import app after patching

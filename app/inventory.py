@@ -181,7 +181,11 @@ class InventoryParser:
             return "arista"
         if "dell" in hostname_lower or "os10" in hostname_lower:
             return "dell"
-        if "juniper" in hostname_lower or "junos" in hostname_lower or "qfx" in hostname_lower:
+        if (
+            "juniper" in hostname_lower
+            or "junos" in hostname_lower
+            or "qfx" in hostname_lower
+        ):
             return "juniper"
         return ""
 

@@ -187,9 +187,7 @@ async def execute_command(request: ExecuteCommandRequest) -> CommandResponse:
         )
 
     # Execute the command
-    logger.info(
-        f"Executing '{request.command_id}' on {switch.name} ({switch.host})"
-    )
+    logger.info(f"Executing '{request.command_id}' on {switch.name} ({switch.host})")
     result = network.execute_command(switch, request.command_id)
 
     return CommandResponse(

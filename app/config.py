@@ -104,6 +104,5 @@ COMMAND_DISPLAY_NAMES: dict[str, str] = {
 def get_available_commands() -> list[dict[str, str]]:
     """Get list of available commands for UI dropdown."""
     return [
-        {"id": cmd_id, "name": name}
-        for cmd_id, name in COMMAND_DISPLAY_NAMES.items()
+        {"id": cmd_id, "name": name} for cmd_id, name in COMMAND_DISPLAY_NAMES.items()
     ]
