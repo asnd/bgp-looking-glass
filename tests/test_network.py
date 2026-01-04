@@ -9,7 +9,7 @@ from app.network import CommandResult, NetworkManager, get_network_manager
 class TestCommandResult:
     """Tests for CommandResult dataclass."""
 
-    def test_success_result(self):
+    def test_success_result(self) -> None:
         """Test creating a successful result."""
         result = CommandResult(
             success=True,
@@ -22,7 +22,7 @@ class TestCommandResult:
         assert result.error == ""
         assert "version" in result.output
 
-    def test_error_result(self):
+    def test_error_result(self) -> None:
         """Test creating an error result."""
         result = CommandResult(
             success=False,
@@ -39,13 +39,13 @@ class TestCommandResult:
 class TestNetworkManager:
     """Tests for NetworkManager."""
 
-    def test_get_network_manager_singleton(self):
+    def test_get_network_manager_singleton(self) -> None:
         """Test network manager is a singleton."""
         manager1 = get_network_manager()
         manager2 = get_network_manager()
         assert manager1 is manager2
 
-    def test_execute_command_invalid_command(self, sample_switch: Switch):
+    def test_execute_command_invalid_command(self, sample_switch: Switch) -> None:
         """Test executing invalid command returns error."""
         manager = NetworkManager()
         result = manager.execute_command(sample_switch, "invalid_command")
@@ -56,7 +56,7 @@ class TestNetworkManager:
     @patch("app.network.ConnectHandler")
     def test_execute_command_success(
         self, mock_connect: MagicMock, sample_switch: Switch
-    ):
+    ) -> None:
         """Test successful command execution."""
         # Setup mock
         mock_connection = MagicMock()
@@ -73,7 +73,7 @@ class TestNetworkManager:
     @patch("app.network.ConnectHandler")
     def test_execute_command_auth_failure(
         self, mock_connect: MagicMock, sample_switch: Switch
-    ):
+    ) -> None:
         """Test authentication failure handling."""
         from netmiko.exceptions import AuthenticationException
 
@@ -88,7 +88,7 @@ class TestNetworkManager:
     @patch("app.network.ConnectHandler")
     def test_execute_command_timeout(
         self, mock_connect: MagicMock, sample_switch: Switch
-    ):
+    ) -> None:
         """Test connection timeout handling."""
         from netmiko.exceptions import NetmikoTimeoutException
 
@@ -103,7 +103,7 @@ class TestNetworkManager:
     @patch("app.network.ConnectHandler")
     def test_test_connection_success(
         self, mock_connect: MagicMock, sample_switch: Switch
-    ):
+    ) -> None:
         """Test connection test success."""
         mock_connection = MagicMock()
         mock_connection.find_prompt.return_value = "switch#"
@@ -118,7 +118,7 @@ class TestNetworkManager:
     @patch("app.network.ConnectHandler")
     def test_test_connection_failure(
         self, mock_connect: MagicMock, sample_switch: Switch
-    ):
+    ) -> None:
         """Test connection test failure."""
         from netmiko.exceptions import NetmikoTimeoutException
 
@@ -134,7 +134,7 @@ class TestNetworkManager:
 class TestVendorCommands:
     """Tests for vendor-specific command mapping."""
 
-    def test_arista_commands(self, sample_switch: Switch):
+    def test_arista_commands(self, sample_switch: Switch) -> None:
         """Test Arista command mapping."""
         from app.config import VENDOR_COMMANDS
 
@@ -143,7 +143,7 @@ class TestVendorCommands:
         assert arista_cmds["show_route"] == "show ip route"
         assert arista_cmds["show_version"] == "show version"
 
-    def test_dell_commands(self):
+    def test_dell_commands(self) -> None:
         """Test Dell OS10 command mapping."""
         from app.config import VENDOR_COMMANDS
 
@@ -151,7 +151,7 @@ class TestVendorCommands:
         assert dell_cmds["show_bgp_summary"] == "show ip bgp summary"
         assert dell_cmds["show_route"] == "show ip route"
 
-    def test_juniper_commands(self):
+    def test_juniper_commands(self) -> None:
         """Test Juniper command mapping."""
         from app.config import VENDOR_COMMANDS
 
