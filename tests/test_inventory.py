@@ -123,6 +123,15 @@ class TestInventoryParser:
         with pytest.raises(FileNotFoundError):
             parser.load()
 
+    def test_invalid_yaml(self, tmp_path: Path) -> None:
+        """Test invalid inventory YAML raises a descriptive error."""
+        inventory_file = tmp_path / "invalid.yml"
+        inventory_file.write_text("all:\n  children:\n    [", encoding="utf-8")
+
+        parser = InventoryParser(inventory_file)
+        with pytest.raises(ValueError, match="Invalid inventory YAML"):
+            parser.load()
+
     def test_reload_inventory(self, inventory_parser: InventoryParser) -> None:
         """Test inventory can be reloaded."""
         initial_sites = len(inventory_parser.get_sites())
