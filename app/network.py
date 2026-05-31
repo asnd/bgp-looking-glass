@@ -2,7 +2,6 @@
 
 import logging
 import threading
-from collections import defaultdict
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -41,18 +40,24 @@ class NetworkManager:
         self.max_concurrent_commands_per_switch = (
             settings.max_concurrent_commands_per_switch
         )
-        self._device_semaphores: defaultdict[str, threading.BoundedSemaphore] = (
-            defaultdict(
-                lambda: threading.BoundedSemaphore(
+        self._device_semaphores: dict[str, threading.BoundedSemaphore] = {}
+        self._device_semaphores_lock = threading.Lock()
+
+    def _get_device_semaphore(self, host: str) -> threading.BoundedSemaphore:
+        """Get or create the concurrency limiter for a switch."""
+        with self._device_semaphores_lock:
+            semaphore = self._device_semaphores.get(host)
+            if semaphore is None:
+                semaphore = threading.BoundedSemaphore(
                     self.max_concurrent_commands_per_switch
                 )
-            )
-        )
+                self._device_semaphores[host] = semaphore
+            return semaphore
 
     @contextmanager
     def _device_slot(self, host: str) -> Iterator[None]:
         """Limit concurrent work per switch."""
-        semaphore = self._device_semaphores[host]
+        semaphore = self._get_device_semaphore(host)
         semaphore.acquire()
         try:
             yield

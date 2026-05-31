@@ -61,10 +61,15 @@ class InventoryParser:
 
     def load(self) -> None:
         """Load and parse the inventory file."""
-        if not self.inventory_path.exists():
-            raise FileNotFoundError(f"Inventory file not found: {self.inventory_path}")
+        with self._lock:
+            if self._loaded:
+                return
+            inventory_path = self.inventory_path
 
-        with self.inventory_path.open(encoding="utf-8") as f:
+        if not inventory_path.exists():
+            raise FileNotFoundError(f"Inventory file not found: {inventory_path}")
+
+        with inventory_path.open(encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         parsed_sites = self._parse_inventory(data)
@@ -223,15 +228,13 @@ class InventoryParser:
 
     def get_sites(self) -> list[Site]:
         """Get all parsed sites."""
-        if not self._loaded:
-            self.load()
+        self.load()
         with self._lock:
             return list(self._sites.values())
 
     def get_site(self, site_id: str) -> Site | None:
         """Get site by ID."""
-        if not self._loaded:
-            self.load()
+        self.load()
         with self._lock:
             return self._sites.get(site_id)
 
@@ -246,26 +249,28 @@ class InventoryParser:
         """Reload inventory from file."""
         with self._lock:
             self._loaded = False
-        self.load()
+            self.load()
 
 
 # Global inventory instance
 _inventory: InventoryParser | None = None
+_inventory_lock = threading.Lock()
 
 
 def get_inventory() -> InventoryParser:
     """Get the global inventory parser instance."""
     global _inventory
-    if _inventory is None:
-        _inventory = InventoryParser()
-    elif _inventory.inventory_path != settings.inventory_path:
-        logger.info(
-            "Inventory path changed from %s to %s; recreating parser",
-            _inventory.inventory_path,
-            settings.inventory_path,
-        )
-        _inventory = InventoryParser()
-    return _inventory
+    with _inventory_lock:
+        if _inventory is None:
+            _inventory = InventoryParser()
+        elif _inventory.inventory_path != settings.inventory_path:
+            logger.info(
+                "Inventory path changed from %s to %s; recreating parser",
+                _inventory.inventory_path,
+                settings.inventory_path,
+            )
+            _inventory = InventoryParser()
+        return _inventory
 
 
 def reload_inventory() -> InventoryParser:
