@@ -106,7 +106,6 @@ async def index(request: Request) -> HTMLResponse:
         request=request,
         name="index.html",
         context={
-            "request": request,
             "app_name": settings.app_name,
             "sites": sites,
             "commands": commands,

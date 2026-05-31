@@ -1,5 +1,6 @@
 """Ansible inventory parser for network devices."""
 
+import logging
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -8,6 +9,8 @@ from typing import Any
 import yaml
 
 from app.config import VENDOR_DEVICE_TYPES, settings
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -253,7 +256,14 @@ _inventory: InventoryParser | None = None
 def get_inventory() -> InventoryParser:
     """Get the global inventory parser instance."""
     global _inventory
-    if _inventory is None or _inventory.inventory_path != settings.inventory_path:
+    if _inventory is None:
+        _inventory = InventoryParser()
+    elif _inventory.inventory_path != settings.inventory_path:
+        logger.info(
+            "Inventory path changed from %s to %s; recreating parser",
+            _inventory.inventory_path,
+            settings.inventory_path,
+        )
         _inventory = InventoryParser()
     return _inventory
 
