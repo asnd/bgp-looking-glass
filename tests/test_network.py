@@ -53,6 +53,12 @@ class TestNetworkManager:
         assert result.success is False
         assert "not supported" in result.error
 
+    def test_stringify_output(self) -> None:
+        """Test Netmiko output is normalized to text."""
+        manager = NetworkManager()
+        assert manager._stringify_output("plain text") == "plain text"
+        assert manager._stringify_output({"status": "ok"}) == "{'status': 'ok'}"
+
     @patch("app.network.ConnectHandler")
     def test_execute_command_success(
         self, mock_connect: MagicMock, sample_switch: Switch

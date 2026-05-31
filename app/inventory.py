@@ -65,19 +65,17 @@ class InventoryParser:
             if self._loaded:
                 return
             inventory_path = self.inventory_path
+            if not inventory_path.exists():
+                raise FileNotFoundError(f"Inventory file not found: {inventory_path}")
 
-        if not inventory_path.exists():
-            raise FileNotFoundError(f"Inventory file not found: {inventory_path}")
+            try:
+                with inventory_path.open(encoding="utf-8") as f:
+                    data = yaml.safe_load(f)
+            except yaml.YAMLError as exc:
+                logger.error("Invalid inventory YAML in %s: %s", inventory_path, exc)
+                raise ValueError(f"Invalid inventory YAML in {inventory_path}") from exc
 
-        try:
-            with inventory_path.open(encoding="utf-8") as f:
-                data = yaml.safe_load(f)
-        except yaml.YAMLError as exc:
-            logger.error("Invalid inventory YAML in %s: %s", inventory_path, exc)
-            raise ValueError(f"Invalid inventory YAML in {inventory_path}") from exc
-
-        parsed_sites = self._parse_inventory(data)
-        with self._lock:
+            parsed_sites = self._parse_inventory(data)
             self._sites = parsed_sites
             self._loaded = True
 
