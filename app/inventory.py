@@ -1,5 +1,6 @@
 """Ansible inventory parser for network devices."""
 
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -53,27 +54,31 @@ class InventoryParser:
         self.inventory_path = inventory_path or settings.inventory_path
         self._sites: dict[str, Site] = {}
         self._loaded = False
+        self._lock = threading.RLock()
 
     def load(self) -> None:
         """Load and parse the inventory file."""
         if not self.inventory_path.exists():
             raise FileNotFoundError(f"Inventory file not found: {self.inventory_path}")
 
-        with open(self.inventory_path) as f:
+        with self.inventory_path.open(encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
-        self._parse_inventory(data)
-        self._loaded = True
+        parsed_sites = self._parse_inventory(data)
+        with self._lock:
+            self._sites = parsed_sites
+            self._loaded = True
 
-    def _parse_inventory(self, data: dict[str, Any]) -> None:
+    def _parse_inventory(self, data: dict[str, Any]) -> dict[str, Site]:
         """Parse inventory data structure."""
         if not data:
-            return
+            return {}
 
         # Handle different Ansible inventory formats
         # Format 1: all.children.sites.children.<site_name>.hosts
         # Format 2: all.children.<site_name>.hosts
         # Format 3: Direct hosts under group names
+        sites: dict[str, Site] = {}
 
         all_group = data.get("all", data)
         children = all_group.get("children", {})
@@ -96,7 +101,9 @@ class InventoryParser:
 
             site = self._parse_site(site_name, site_data)
             if site and site.switches:
-                self._sites[site.site_id] = site
+                sites[site.site_id] = site
+
+        return sites
 
     def _parse_site(self, site_name: str, site_data: dict[str, Any]) -> Site | None:
         """Parse a single site from inventory."""
@@ -187,6 +194,8 @@ class InventoryParser:
             or "qfx" in hostname_lower
         ):
             return "juniper"
+        if "sonic" in hostname_lower:
+            return "sonic"
         return ""
 
     def _detect_role(self, hostname: str, ip: str) -> str:
@@ -213,13 +222,15 @@ class InventoryParser:
         """Get all parsed sites."""
         if not self._loaded:
             self.load()
-        return list(self._sites.values())
+        with self._lock:
+            return list(self._sites.values())
 
     def get_site(self, site_id: str) -> Site | None:
         """Get site by ID."""
         if not self._loaded:
             self.load()
-        return self._sites.get(site_id)
+        with self._lock:
+            return self._sites.get(site_id)
 
     def get_switch(self, site_id: str, role: str) -> Switch | None:
         """Get switch by site ID and role."""
@@ -230,8 +241,8 @@ class InventoryParser:
 
     def reload(self) -> None:
         """Reload inventory from file."""
-        self._sites.clear()
-        self._loaded = False
+        with self._lock:
+            self._loaded = False
         self.load()
 
 
@@ -242,15 +253,13 @@ _inventory: InventoryParser | None = None
 def get_inventory() -> InventoryParser:
     """Get the global inventory parser instance."""
     global _inventory
-    if _inventory is None:
+    if _inventory is None or _inventory.inventory_path != settings.inventory_path:
         _inventory = InventoryParser()
     return _inventory
 
 
 def reload_inventory() -> InventoryParser:
     """Reload and return the inventory."""
-    global _inventory
-    if _inventory is None:
-        _inventory = InventoryParser()
+    _inventory = get_inventory()
     _inventory.reload()
     return _inventory

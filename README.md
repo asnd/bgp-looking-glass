@@ -1,15 +1,16 @@
 # BGP Looking Glass
 
-A web-based network looking glass application for multi-vendor switches in a leaf-spine topology. Execute show commands on Arista EOS, Dell OS10, and Juniper Junos devices through a simple web interface.
+A web-based network looking glass application for multi-vendor switches in a leaf-spine topology. Execute show commands on Arista EOS, Dell OS10, Juniper Junos, and SONiC devices through a simple web interface.
 
 ## Features
 
-- **Multi-vendor support**: Arista EOS, Dell OS10, Juniper Junos
+- **Multi-vendor support**: Arista EOS, Dell OS10, Juniper Junos, SONiC
 - **Ansible inventory integration**: Uses YAML inventory files for device management
 - **Leaf-spine topology**: Supports LR1/LR2 switch pairs per site
 - **Web UI**: Bootstrap-based responsive interface with HTMX for dynamic updates
 - **REST API**: Full API for programmatic access
 - **Docker ready**: Containerized deployment
+- **Per-device throttling**: Limits concurrent commands per switch
 
 ## Quick Start
 
@@ -63,6 +64,7 @@ docker-compose logs -f looking-glass
 | `LG_INVENTORY_PATH` | inventory/hosts.yml | Path to Ansible inventory |
 | `LG_CONNECTION_TIMEOUT` | 30 | SSH connection timeout (seconds) |
 | `LG_COMMAND_TIMEOUT` | 60 | Command execution timeout (seconds) |
+| `LG_MAX_CONCURRENT_COMMANDS_PER_SWITCH` | 2 | Maximum concurrent commands per switch |
 | `LG_DEFAULT_USERNAME` | admin | Default SSH username |
 | `LG_DEFAULT_PASSWORD` | | Default SSH password |
 
@@ -95,6 +97,7 @@ all:
 | Arista | arista_eos | EOS switches |
 | Dell | dell_os10 | OS10 switches |
 | Juniper | juniper_junos | Junos devices |
+| SONiC | sonic_os | SONiC switches |
 
 ## API Endpoints
 
@@ -132,6 +135,12 @@ curl -X POST http://localhost:8000/api/execute \
 - Show LLDP Neighbors
 - Show MAC Address Table
 - Show ARP Table
+
+## Production-readiness Notes
+
+- Blocking inventory parsing and SSH command execution are offloaded from the async request loop.
+- Inventory reloads replace the parsed site map atomically, avoiding partially cleared reads.
+- HTMX command responses escape device output before rendering it into HTML.
 
 ## Development
 

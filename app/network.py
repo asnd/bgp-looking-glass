@@ -1,6 +1,10 @@
 """Network device communication using Netmiko."""
 
 import logging
+import threading
+from collections import defaultdict
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
 
@@ -34,6 +38,32 @@ class NetworkManager:
     def __init__(self) -> None:
         self.connection_timeout = settings.connection_timeout
         self.command_timeout = settings.command_timeout
+        self.max_concurrent_commands_per_switch = (
+            settings.max_concurrent_commands_per_switch
+        )
+        self._device_semaphores: defaultdict[str, threading.BoundedSemaphore] = (
+            defaultdict(
+                lambda: threading.BoundedSemaphore(
+                    self.max_concurrent_commands_per_switch
+                )
+            )
+        )
+
+    @contextmanager
+    def _device_slot(self, host: str) -> Iterator[None]:
+        """Limit concurrent work per switch."""
+        semaphore = self._device_semaphores[host]
+        semaphore.acquire()
+        try:
+            yield
+        finally:
+            semaphore.release()
+
+    def _stringify_output(self, output: Any) -> str:
+        """Normalize Netmiko output to a string."""
+        if isinstance(output, str):
+            return output
+        return str(output)
 
     def execute_command(
         self,
@@ -77,14 +107,17 @@ class NetworkManager:
         }
 
         try:
-            logger.info(f"Connecting to {switch.name} ({switch.host})")
+            with self._device_slot(switch.host):
+                logger.info("Connecting to %s (%s)", switch.name, switch.host)
 
-            with ConnectHandler(**device_params) as conn:
-                logger.info(f"Executing command: {command}")
-                output = conn.send_command(
-                    command,
-                    read_timeout=self.command_timeout,
-                )
+                with ConnectHandler(**device_params) as conn:
+                    logger.info("Executing command '%s' on %s", command, switch.host)
+                    output = self._stringify_output(
+                        conn.send_command(
+                            command,
+                            read_timeout=self.command_timeout,
+                        )
+                    )
 
             return CommandResult(
                 success=True,
@@ -95,7 +128,7 @@ class NetworkManager:
             )
 
         except AuthenticationException as e:
-            logger.error(f"Authentication failed for {switch.host}: {e}")
+            logger.error("Authentication failed for %s: %s", switch.host, e)
             return CommandResult(
                 success=False,
                 output="",
@@ -106,7 +139,7 @@ class NetworkManager:
             )
 
         except NetmikoTimeoutException as e:
-            logger.error(f"Connection timeout for {switch.host}: {e}")
+            logger.error("Connection timeout for %s: %s", switch.host, e)
             return CommandResult(
                 success=False,
                 output="",
@@ -117,7 +150,7 @@ class NetworkManager:
             )
 
         except Exception as e:
-            logger.error(f"Error executing command on {switch.host}: {e}")
+            logger.exception("Error executing command on %s", switch.host)
             return CommandResult(
                 success=False,
                 output="",
@@ -144,7 +177,10 @@ class NetworkManager:
         }
 
         try:
-            with ConnectHandler(**device_params) as conn:
+            with (
+                self._device_slot(switch.host),
+                ConnectHandler(**device_params) as conn,
+            ):
                 prompt = conn.find_prompt()
                 return True, f"Connected successfully. Prompt: {prompt}"
 

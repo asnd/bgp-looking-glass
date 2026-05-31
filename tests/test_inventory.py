@@ -100,6 +100,23 @@ class TestInventoryParser:
         assert switch.username == "admin"
         assert switch.password == "secret123"
 
+    def test_parse_sonic_network_os(self) -> None:
+        """Test SONiC inventory entries map to the Netmiko SONiC driver."""
+        parser = InventoryParser()
+        switch = parser._parse_host(
+            "dc3-sonic-lr1",
+            {
+                "ansible_host": "10.74.3.245",
+                "ansible_network_os": "sonic_os",
+                "ansible_user": "admin",
+                "ansible_password": "secret789",
+                "role": "LR1",
+            },
+        )
+        assert switch is not None
+        assert switch.vendor == "sonic_os"
+        assert switch.device_type == "sonic_os"
+
     def test_file_not_found(self) -> None:
         """Test error when inventory file doesn't exist."""
         parser = InventoryParser(Path("/nonexistent/path.yml"))
@@ -168,3 +185,9 @@ class TestVendorDetection:
         parser = InventoryParser()
         vendor = parser._detect_vendor("unknown-switch")
         assert vendor == ""
+
+    def test_detect_sonic(self) -> None:
+        """Test SONiC vendor detection."""
+        parser = InventoryParser()
+        vendor = parser._detect_vendor("dc3-sonic-lr1")
+        assert vendor == "sonic"

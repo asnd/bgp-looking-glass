@@ -2,7 +2,8 @@
 
 from pathlib import Path
 
-from pydantic_settings import BaseSettings
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -15,8 +16,9 @@ class Settings(BaseSettings):
     inventory_path: Path = Path("inventory/hosts.yml")
 
     # Network timeouts (seconds)
-    connection_timeout: int = 30
-    command_timeout: int = 60
+    connection_timeout: int = Field(default=30, ge=1)
+    command_timeout: int = Field(default=60, ge=1)
+    max_concurrent_commands_per_switch: int = Field(default=2, ge=1)
 
     # Authentication (can be overridden per-device in inventory)
     default_username: str = "admin"
@@ -25,9 +27,7 @@ class Settings(BaseSettings):
     # Security
     secret_key: str = "change-me-in-production"
 
-    class Config:
-        env_file = ".env"
-        env_prefix = "LG_"
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="LG_")
 
 
 settings = Settings()
@@ -41,6 +41,8 @@ VENDOR_DEVICE_TYPES: dict[str, str] = {
     "dell_os10": "dell_os10",
     "juniper": "juniper_junos",
     "juniper_junos": "juniper_junos",
+    "sonic": "sonic_os",
+    "sonic_os": "sonic_os",
 }
 
 
@@ -82,6 +84,18 @@ VENDOR_COMMANDS: dict[str, dict[str, str]] = {
         "show_lldp": "show lldp neighbors",
         "show_mac_table": "show ethernet-switching table",
         "show_arp": "show arp no-resolve",
+    },
+    "sonic_os": {
+        "show_version": "show version",
+        "show_vlan": "show vlan brief",
+        "show_route": "show ip route",
+        "show_bgp_summary": "show ip bgp summary",
+        "show_bgp_neighbors": "show ip bgp neighbors",
+        "show_interfaces": "show interfaces status",
+        "show_ip_interface": "show ip interfaces",
+        "show_lldp": "show lldp table",
+        "show_mac_table": "show mac",
+        "show_arp": "show arp",
     },
 }
 

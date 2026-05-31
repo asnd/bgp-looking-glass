@@ -159,3 +159,12 @@ class TestVendorCommands:
         assert junos_cmds["show_bgp_summary"] == "show bgp summary"
         assert junos_cmds["show_route"] == "show route"
         assert junos_cmds["show_vlan"] == "show vlans"
+
+    def test_sonic_commands(self) -> None:
+        """Test SONiC command mapping."""
+        from app.config import VENDOR_COMMANDS
+
+        sonic_cmds = VENDOR_COMMANDS["sonic_os"]
+        assert sonic_cmds["show_bgp_summary"] == "show ip bgp summary"
+        assert sonic_cmds["show_interfaces"] == "show interfaces status"
+        assert sonic_cmds["show_lldp"] == "show lldp table"

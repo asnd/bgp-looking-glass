@@ -1,5 +1,7 @@
 """FastAPI application for BGP Looking Glass."""
 
+import asyncio
+import html
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -31,12 +33,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("Starting BGP Looking Glass application")
     try:
         inventory = get_inventory()
-        inventory.load()
-        logger.info(f"Loaded {len(inventory.get_sites())} sites from inventory")
+        await asyncio.to_thread(inventory.load)
+        sites = await asyncio.to_thread(inventory.get_sites)
+        logger.info("Loaded %s sites from inventory", len(sites))
     except FileNotFoundError:
         logger.warning("Inventory file not found. Create inventory/hosts.yml")
-    except Exception as e:
-        logger.error(f"Error loading inventory: {e}")
+    except Exception:
+        logger.exception("Error loading inventory")
 
     yield
 
@@ -96,12 +99,13 @@ class CommandResponse(BaseModel):
 async def index(request: Request) -> HTMLResponse:
     """Render the main looking glass page."""
     inventory = get_inventory()
-    sites = inventory.get_sites()
+    sites = await asyncio.to_thread(inventory.get_sites)
     commands = get_available_commands()
 
     return templates.TemplateResponse(
-        "index.html",
-        {
+        request=request,
+        name="index.html",
+        context={
             "request": request,
             "app_name": settings.app_name,
             "sites": sites,
@@ -114,7 +118,7 @@ async def index(request: Request) -> HTMLResponse:
 async def get_sites() -> list[SiteResponse]:
     """Get list of all sites."""
     inventory = get_inventory()
-    sites = inventory.get_sites()
+    sites = await asyncio.to_thread(inventory.get_sites)
 
     return [
         SiteResponse(
@@ -131,7 +135,7 @@ async def get_sites() -> list[SiteResponse]:
 async def get_site(site_id: str) -> SiteResponse:
     """Get site details by ID."""
     inventory = get_inventory()
-    site = inventory.get_site(site_id)
+    site = await asyncio.to_thread(inventory.get_site, site_id)
 
     if not site:
         raise HTTPException(status_code=404, detail=f"Site '{site_id}' not found")
@@ -148,7 +152,7 @@ async def get_site(site_id: str) -> SiteResponse:
 async def get_switch_info(site_id: str, role: str) -> dict[str, Any]:
     """Get switch information by site and role."""
     inventory = get_inventory()
-    switch = inventory.get_switch(site_id, role.upper())
+    switch = await asyncio.to_thread(inventory.get_switch, site_id, role.upper())
 
     if not switch:
         raise HTTPException(
@@ -179,7 +183,9 @@ async def execute_command(request: ExecuteCommandRequest) -> CommandResponse:
     network = get_network_manager()
 
     # Get the switch
-    switch = inventory.get_switch(request.site_id, request.switch_role.upper())
+    switch = await asyncio.to_thread(
+        inventory.get_switch, request.site_id, request.switch_role.upper()
+    )
     if not switch:
         raise HTTPException(
             status_code=404,
@@ -187,8 +193,12 @@ async def execute_command(request: ExecuteCommandRequest) -> CommandResponse:
         )
 
     # Execute the command
-    logger.info(f"Executing '{request.command_id}' on {switch.name} ({switch.host})")
-    result = network.execute_command(switch, request.command_id)
+    logger.info(
+        "Executing '%s' on %s (%s)", request.command_id, switch.name, switch.host
+    )
+    result = await asyncio.to_thread(
+        network.execute_command, switch, request.command_id
+    )
 
     return CommandResponse(
         success=result.success,
@@ -204,8 +214,8 @@ async def execute_command(request: ExecuteCommandRequest) -> CommandResponse:
 async def api_reload_inventory() -> dict[str, Any]:
     """Reload the inventory from file."""
     try:
-        inventory = reload_inventory()
-        sites = inventory.get_sites()
+        inventory = await asyncio.to_thread(reload_inventory)
+        sites = await asyncio.to_thread(inventory.get_sites)
         return {
             "success": True,
             "message": f"Reloaded {len(sites)} sites",
@@ -226,7 +236,7 @@ async def health_check() -> dict[str, str]:
 async def get_switches_partial(request: Request, site_id: str) -> HTMLResponse:
     """Get switches dropdown options for a site (HTMX partial)."""
     inventory = get_inventory()
-    site = inventory.get_site(site_id)
+    site = await asyncio.to_thread(inventory.get_site, site_id)
 
     if not site:
         return HTMLResponse("")
@@ -235,7 +245,10 @@ async def get_switches_partial(request: Request, site_id: str) -> HTMLResponse:
     for role in ["LR1", "LR2"]:
         switch = site.switches.get(role)
         if switch:
-            switches_html += f'<option value="{role}">{role} - {switch.host}</option>'
+            switches_html += (
+                f'<option value="{html.escape(role)}">'
+                f"{html.escape(role)} - {html.escape(switch.host)}</option>"
+            )
 
     return HTMLResponse(switches_html)
 
@@ -256,22 +269,30 @@ async def execute_partial(request: Request) -> HTMLResponse:
     inventory = get_inventory()
     network = get_network_manager()
 
-    switch = inventory.get_switch(str(site_id), str(switch_role).upper())
+    switch = await asyncio.to_thread(
+        inventory.get_switch, str(site_id), str(switch_role).upper()
+    )
     if not switch:
         return HTMLResponse(
             f'<div class="alert alert-danger">Switch not found: {switch_role} in site {site_id}</div>'
         )
 
-    result = network.execute_command(switch, str(command_id))
+    result = await asyncio.to_thread(network.execute_command, switch, str(command_id))
+
+    switch_name = html.escape(result.switch_name)
+    switch_host = html.escape(result.switch_host)
+    command = html.escape(result.command)
+    output = html.escape(result.output)
+    error = html.escape(result.error)
 
     if result.success:
         return HTMLResponse(f"""
             <div class="card">
                 <div class="card-header bg-success text-white">
-                    <strong>{result.switch_name}</strong> ({result.switch_host}) - {result.command}
+                    <strong>{switch_name}</strong> ({switch_host}) - {command}
                 </div>
                 <div class="card-body">
-                    <pre class="bg-dark text-light p-3 rounded" style="max-height: 600px; overflow-y: auto;">{result.output}</pre>
+                    <pre class="bg-dark text-light p-3 rounded" style="max-height: 600px; overflow-y: auto;">{output}</pre>
                 </div>
             </div>
         """)
@@ -279,10 +300,10 @@ async def execute_partial(request: Request) -> HTMLResponse:
         return HTMLResponse(f"""
             <div class="card">
                 <div class="card-header bg-danger text-white">
-                    <strong>Error:</strong> {result.switch_name} ({result.switch_host})
+                    <strong>Error:</strong> {switch_name} ({switch_host})
                 </div>
                 <div class="card-body">
-                    <div class="alert alert-danger">{result.error}</div>
+                    <div class="alert alert-danger">{error}</div>
                 </div>
             </div>
         """)

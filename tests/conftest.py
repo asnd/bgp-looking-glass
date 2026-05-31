@@ -99,7 +99,9 @@ def sample_switch() -> Switch:
 
 
 @pytest.fixture
-def test_client(temp_inventory_file: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+def test_client(
+    temp_inventory_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> TestClient:
     """Create a test client with mocked inventory."""
     # Patch the settings to use temp inventory
     from app import config
